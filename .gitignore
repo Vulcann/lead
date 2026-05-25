@@ -197,3 +197,5 @@ visualization/
 outputs
 .claude/scheduled_tasks.lock
 3rd_party/plant2
+
+.claude/settings.local.json

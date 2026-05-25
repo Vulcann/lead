@@ -1,0 +1,112 @@
+# syntax=docker/dockerfile:1.6
+# ─────────────────────────────────────────────────────────────────────
+#  LEAD development image
+#  Base: Ubuntu 22.04 (glibc 2.35) + CUDA 12.8 (Blackwell / RTX 5090)
+#  Contains: CARLA 0.9.15 server + Python API, Miniconda, PyTorch 2.7
+#  Code mounts:  host ~/workspace/lead  →  container /workspace/lead
+# ─────────────────────────────────────────────────────────────────────
+FROM nvidia/cuda:12.8.0-cudnn-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    TZ=Europe/Berlin
+
+# ───── 1. 系统依赖 ─────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # 基础工具
+    wget curl ca-certificates git git-lfs build-essential \
+    sudo tmux htop tree unzip zip vim nano \
+    # CARLA 运行依赖
+    libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
+    libomp5 libjpeg-turbo8 libtiff5 \
+    libpng16-16 libxerces-c3.2 \
+    fontconfig xdg-user-dirs \
+    # Vulkan (CARLA 渲染后端)
+    libvulkan1 vulkan-tools mesa-vulkan-drivers \
+    # 视频处理
+    ffmpeg \
+    # Python 编译时偶尔需要
+    libssl-dev libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ───── 2. CARLA 0.9.15 ─────
+# ~6GB 下载，build 时一次性付出
+RUN mkdir -p /opt/carla && cd /opt/carla && \
+    echo "Downloading CARLA 0.9.15..." && \
+    wget --progress=dot:giga \
+      https://tiny.carla.org/carla-0-9-15-linux -O carla.tar.gz && \
+    tar -xzf carla.tar.gz && \
+    rm carla.tar.gz && \
+    ls -la
+
+ENV CARLA_ROOT=/opt/carla
+ENV PYTHONPATH=/opt/carla/PythonAPI/carla:${PYTHONPATH:-}
+
+# ───── 3. Miniconda ─────
+RUN wget -q \
+    https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
+    -O /tmp/mc.sh && \
+    bash /tmp/mc.sh -b -p /opt/conda && \
+    rm /tmp/mc.sh && \
+    /opt/conda/bin/conda clean -afy
+
+ENV PATH=/opt/conda/bin:$PATH
+
+# ───── 4. lead conda env ─────
+# 接受 Anaconda 默认 channel 的 ToS (2024+ 政策)
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+
+RUN conda create -n lead python=3.10 -y && \
+    conda install -n lead -c conda-forge -y \
+        uv git-lfs ffmpeg parallel tree gcc zip unzip && \
+    conda clean -afy
+
+# 让 lead env 的 python 在 PATH 优先
+ENV PATH=/opt/conda/envs/lead/bin:$PATH
+ENV CONDA_DEFAULT_ENV=lead
+
+# ───── 5. PyTorch 2.7 + CUDA 12.8 (Blackwell / RTX 5090) ─────
+# 注意：根据 LEAD README,Blackwell 仅支持推理,训练不稳定
+RUN /opt/conda/envs/lead/bin/pip install --no-cache-dir \
+    torch==2.7.0 torchvision \
+    --index-url https://download.pytorch.org/whl/cu128
+
+# ───── 6. 把 CARLA Python binding 装到 lead env ─────
+# LEAD 期望直接 import carla 能工作。
+# 注意:打包的 dist/ 只含 cp27/cp37 wheel,与 py3.10 不兼容,
+# 官方 PyPI 提供 cp310 wheel,直接安装它确保 py3.10 下 `import carla` 可用。
+RUN /opt/conda/envs/lead/bin/pip install --no-cache-dir carla==0.9.15
+
+# ───── 7. 工作目录与 symlink ─────
+WORKDIR /workspace/lead
+
+# LEAD 的 setup_carla.sh 期望 3rd_party/CARLA_0915
+# 容器启动后,host 代码挂载进来,再建 symlink
+# 这里只准备目录结构占位
+RUN mkdir -p /workspace/lead/3rd_party
+
+# ───── 8. 开发工具 (Claude CLI + Oh My Bash) ─────
+# 原生安装器版本
+RUN curl -fsSL https://claude.ai/install.sh | bash \
+ && ln -s /root/.local/bin/claude /usr/local/bin/claude
+
+# Oh My Bash —— 非交互安装 (空 "$0" 占位 + --unattended)。
+# 注意:安装器会覆盖 /root/.bashrc,所以下面 step 9 的 conda/CARLA
+# 初始化必须放在它之后再追加,否则会被清掉。
+RUN bash -c "$(curl -fsSL https://raw.githubusercontent.com/ohmybash/oh-my-bash/master/tools/install.sh)" "" --unattended
+
+# ───── 9. Shell 初始化 (务必在 Oh My Bash 之后) ─────
+RUN echo "source /opt/conda/etc/profile.d/conda.sh" >> /root/.bashrc && \
+    echo "conda activate lead" >> /root/.bashrc && \
+    echo "export PYTHONPATH=/opt/carla/PythonAPI/carla:\${PYTHONPATH:-}" >> /root/.bashrc && \
+    echo "export CARLA_ROOT=/opt/carla" >> /root/.bashrc && \
+    echo "cd /workspace/lead" >> /root/.bashrc && \
+    echo "# 自动 symlink CARLA(代码挂载后生效)" >> /root/.bashrc && \
+    echo "[ -d /workspace/lead/3rd_party ] && [ ! -e /workspace/lead/3rd_party/CARLA_0915 ] && ln -sf /opt/carla /workspace/lead/3rd_party/CARLA_0915" >> /root/.bashrc
+
+# CARLA 默认端口
+EXPOSE 2000 2001 2002
+
+CMD ["/bin/bash"]

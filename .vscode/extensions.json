@@ -1,5 +1,6 @@
 {
     "recommendations": [
+        "anthropic.claude-code",
         "misarb.carlaapi",
         "charliermarsh.ruff",
         "naumovs.color-highlight",
