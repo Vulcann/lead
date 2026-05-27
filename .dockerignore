@@ -1,0 +1,6 @@
+# Build context = repo root (so Dockerfile.lead can COPY pyproject.toml + uv.lock).
+# The Dockerfile COPYs ONLY those two files, so exclude everything else to keep the
+# context tiny (~440 KB) — no data/, outputs/, 3rd_party/, .git sent to the daemon.
+*
+!pyproject.toml
+!uv.lock

@@ -4,16 +4,21 @@
 {
   "name": "lead",
 
-  // Build from the existing Dockerfile. Context is docker/ (same as build.sh) so the
-  // big repo dirs (data/, outputs/) are not sent to the daemon — the Dockerfile COPYs nothing.
+  // Build from the existing Dockerfile. Context is the repo root (same as build.sh) so the
+  // Dockerfile's §6.5 can COPY pyproject.toml + uv.lock. The repo-root .dockerignore allows
+  // only those two files, so the big dirs (data/, outputs/, 3rd_party/) are still not sent.
   "build": {
     "dockerfile": "../docker/Dockerfile.lead",
-    "context": "../docker"
+    "context": ".."
   },
 
   // Equivalent to the `docker run` flags in run.sh.
   "runArgs": [
     "--gpus", "all",
+    // CARLA/Unreal renders via Vulkan even with -RenderOffScreen; the default CUDA
+    // image only exposes compute,utility so the NVIDIA Vulkan ICD is missing and the
+    // RenderThread segfaults. 'all' makes nvidia-container-runtime inject the graphics libs.
+    "--env", "NVIDIA_DRIVER_CAPABILITIES=all",
     "--network=host",
     "--shm-size=16g",
     "--ulimit", "memlock=-1",

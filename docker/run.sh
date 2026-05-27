@@ -28,6 +28,7 @@ echo "🚀 Starting new container: $CONTAINER_NAME"
 docker run -it \
     --name "$CONTAINER_NAME" \
     --gpus all \
+    -e NVIDIA_DRIVER_CAPABILITIES=all \
     --network host \
     --shm-size=16g \
     --ulimit memlock=-1 \
