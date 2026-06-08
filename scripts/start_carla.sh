@@ -9,6 +9,22 @@
 # an ambient cap. The LEAD client talks to the server over TCP, so the server's
 # user is independent of the client's; CARLA_ROOT/HOME are passed through.
 if [ "$(id -u)" -eq 0 ]; then
+	# Self-heal the NVIDIA Vulkan ICD descriptor. The driver libs are injected by
+	# the NVIDIA Container Toolkit, but on a container reboot/recreation the ICD
+	# JSON that VK_ICD_FILENAMES points to can go missing while libGLX_nvidia.so.0
+	# (which exports vk_icdGetInstanceProcAddr) is still present. Without the JSON
+	# the loader can't find the driver -> vkCreateInstance fails -> CARLA exits
+	# instantly with an empty log. Recreate it (needs root) before dropping to carla.
+	icd=/usr/share/vulkan/icd.d/nvidia_icd.json
+	if [ ! -f "$icd" ] && ldconfig -p | grep -q libGLX_nvidia.so.0; then
+		echo "[start_carla] $icd missing -> recreating NVIDIA Vulkan ICD descriptor"
+		cat >"$icd" <<-'EOF'
+			{
+			    "ICD": { "api_version": "1.3.289", "library_path": "libGLX_nvidia.so.0" },
+			    "file_format_version": "1.0.0"
+			}
+		EOF
+	fi
 	echo "[start_carla] root -> drop to 'carla' + ambient CAP_DAC_OVERRIDE (NVIDIA Vulkan needs it)"
 	exec setpriv --reuid="$(id -u carla)" --regid="$(id -g carla)" --init-groups \
 		--inh-caps=+dac_override --ambient-caps=+dac_override \
@@ -33,6 +49,18 @@ fi
 streaming_port=$((port + 1))
 if [ "$2" != "" ]; then
 	streaming_port=$2
+fi
+
+# Refuse to launch if the RPC port is already bound. UE4 doesn't fail cleanly on
+# a taken port — it segfaults during bind, leaving an empty log and no process,
+# which looks identical to a slow boot. (Common trap: another CARLA, possibly in
+# a different container under --network=host, already owns the port.) /dev/tcp,
+# not ss/netstat, since those report false negatives under --network=host.
+if timeout 3 bash -c "exec 3<>/dev/tcp/127.0.0.1/$port" 2>/dev/null; then
+	echo "[start_carla] ERROR: port $port is already in use — not launching."
+	echo "              Check who owns it (bash scripts/carla_status.sh $port), then either"
+	echo "              stop it or start on a free port:  bash $0 <free-port>"
+	exit 1
 fi
 
 # Force the NVIDIA GPU. The Vulkan loader otherwise also exposes the Mesa
