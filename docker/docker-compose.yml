@@ -1,0 +1,69 @@
+# chery-ADAS-Server 闭环评测内环 —— 双容器编排
+# 用法:
+#   docker compose build
+#   docker compose up -d carla-server      # 先起服务端
+#   docker compose up -d lead-eval         # 再起评测/开发端
+#   docker compose down                    # 停止全部
+# 脚本 start_carla.sh / start_lead.sh 与 .devcontainer/devcontainer.json 均依赖本文件。
+
+services:
+  # ── 服务端:CARLA 0.9.15 模拟器(纯 server,起一次长驻;崩溃自动拉起)──
+  carla-server:
+    image: carlasim/carla:0.9.15
+    runtime: nvidia
+    restart: unless-stopped
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - adas-net
+    command: >
+      bash CarlaUE4.sh -RenderOffScreen -nosound
+      -carla-rpc-port=${CARLA_RPC_PORT:-2000}
+      -quality-level=${CARLA_QUALITY:-Epic}
+
+  # ── 评测/开发端:LEAD 技术栈(推理 + 评测 + VS Code Dev Container 工作区)──
+  lead-eval:
+    build:
+      context: .
+      dockerfile: lead-eval.Dockerfile
+      args:                              # 容器内用户,集中在 .env 配置(换机器只改 .env)
+        USERNAME: ${USERNAME:-carla}
+        USER_UID: ${USER_UID:-1005}
+        USER_GID: ${USER_GID:-1006}
+    image: chery-adas/lead-eval:latest
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CARLA_EXTERNAL=1               # 旁路评测器内部 spawn,改连外部 CARLA(见文档第 3 节)
+      - CARLA_HOST=carla-server        # 用 compose 服务名解析,勿用 localhost
+      - CARLA_PORT=2000
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      # LEAD 源码:宿主机 → 容器,读写挂载。改代码即时生效,git 在宿主机管理。
+      - ${LEAD_SRC:-/home/weiyu/workspace/lead}:/workspace/lead
+      - ./outputs:/workspace/lead/outputs                      # 评测产出落盘(数据边界)
+      - ./checkpoints:/workspace/lead/outputs/checkpoints      # 模型权重
+    # 不设 depends_on:开发只需 lead-eval;carla-server 评测时用 start_carla.sh 单独起。
+    # 两者在运行时经 adas-net 网络 + 服务名 carla-server:2000 连接,无需启动期强绑定。
+    networks:
+      - adas-net
+    stdin_open: true                   # 保持 STDIN(交互 shell / Dev Container 需要)
+    tty: true
+
+networks:
+  adas-net:
+    driver: bridge                     # 自定义 bridge:提供服务名 DNS,使 lead-eval 能连 carla-server

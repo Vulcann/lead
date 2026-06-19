@@ -1,0 +1,78 @@
+{
+  "name": "chery-ADAS lead-eval",
+
+  // 复用现有的 docker-compose,而非另写容器定义。
+  // 启动 lead-eval 作为开发容器;compose 的 depends_on 会一并带起 carla-server,
+  // 两者在同一 adas-net 网络,容器内可直接连 carla-server:2000。
+  "dockerComposeFile": ["../docker/docker-compose.yml"],
+  "service": "lead-eval",
+  "runServices": ["lead-eval", "carla-server"],
+
+  // 进入容器后的工作目录。LEAD 仓库在构建期已 clone 到 /workspace/lead,
+  // 容器创建时即存在,远程首次 Reopen 不会因目录缺失报错。
+  "workspaceFolder": "/workspace/lead",
+
+  // 以容器内的非 root 用户身份开发,与挂载卷权限对齐
+  // 以非 root 用户开发,UID 与挂载卷对齐。注意:此处用户名需与 docker/.env 的
+  // USERNAME 保持一致(devcontainer.json 不读 .env,换用户名时这一行要手动同步)。
+  "remoteUser": "carla",
+  "updateRemoteUserUID": true,
+
+  // 改了 Dockerfile / compose / 本文件后,VS Code 会提示 "Rebuild";
+  // 下面的 features/postCreate 在(重新)创建容器时自动执行,
+  // 确保开发环境始终与最新定义一致,无需手动补步骤。
+  "overrideCommand": false,
+  "shutdownAction": "stopCompose",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.debugpy",
+        "charliermarsh.ruff",
+        "ms-toolsai.jupyter",
+        "ms-azuretools.vscode-docker",
+        "redhat.vscode-yaml",
+        "tamasfe.even-better-toml",
+        "eamodio.gitlens",
+        "GitHub.copilot"
+      ],
+      "settings": {
+        // 指向容器内 conda 的 lead 环境解释器
+        "python.defaultInterpreterPath": "~/miniforge3/envs/lead/bin/python",
+        "python.terminal.activateEnvironment": true,
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "terminal.integrated.profiles.linux": {
+          "bash": {
+            "path": "/bin/bash",
+            // 每个新终端自动激活 lead 环境
+            "args": ["-c", "source $HOME/miniforge3/etc/profile.d/conda.sh && conda activate lead && exec bash"]
+          }
+        },
+        "[python]": {
+          "editor.formatOnSave": true,
+          "editor.defaultFormatter": "charliermarsh.ruff"
+        },
+        "files.watcherExclude": {
+          "**/outputs/**": true,
+          "**/checkpoints/**": true
+        }
+      }
+    }
+  },
+
+  // 容器(重新)创建后执行一次:确认 lead 环境就绪、CARLA Python API 可导入。
+  // 依赖的实际安装由 lead-eval 的 entrypoint.sh 负责,这里只做校验与友好提示。
+  "postCreateCommand": "bash -lc 'source $HOME/miniforge3/etc/profile.d/conda.sh && conda activate lead && python -c \"import torch,carla; print(\\\"torch\\\", torch.__version__, \\\"cuda\\\", torch.cuda.is_available()); print(\\\"carla ok\\\")\" || echo \"环境尚未就绪,首次启动 entrypoint 仍在装依赖,稍候重试\"'",
+
+  // 每次连接(含重启后重连)时打印 GPU 与 CARLA server 连通性,便于快速判断状态
+  "postAttachCommand": "bash -lc 'nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv,noheader; python -c \"import carla; print(\\\"carla-server:\\\", carla.Client(\\\"carla-server\\\",2000).get_server_version())\" 2>/dev/null || echo \"carla-server 暂未就绪(可在评测前再确认)\"'",
+
+  "remoteEnv": {
+    "CARLA_EXTERNAL": "1",
+    "CARLA_HOST": "carla-server",
+    "CARLA_PORT": "2000",
+    "LEAD_PROJECT_ROOT": "/workspace/lead"
+  }
+}
