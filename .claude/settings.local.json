@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ps -eo pid,ppid,args)",
+      "Bash(ps -o pid,lstart,args -p 1)",
+      "Read(//proc/**)",
+      "Bash(command -v docker)",
+      "Read(//tmp/**)",
+      "Bash(find / -name 'docker-compose*devcontainer*')"
+    ]
+  }
+}

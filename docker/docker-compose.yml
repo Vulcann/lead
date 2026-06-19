@@ -57,6 +57,12 @@ services:
       - ${LEAD_SRC:-/home/weiyu/workspace/lead}:/workspace/lead
       - ./outputs:/workspace/lead/outputs                      # 评测产出落盘(数据边界)
       - ./checkpoints:/workspace/lead/outputs/checkpoints      # 模型权重
+      # 宿主机 git 配置(user.name/email + core.editor=vim 等)只读挂载进容器,
+      # 免去每次进容器重设;只读:容器不会把改动回写污染宿主机配置。
+      - ${HOST_GITCONFIG:-/home/weiyu/.gitconfig}:/home/${USERNAME:-carla}/.gitconfig:ro
+      # Claude Code 配置 + 历史 + 凭据(CLAUDE_CONFIG_DIR=~/.claude)持久化到命名卷,
+      # 跨容器重建不丢登录态与会话历史。首次创建会用镜像内 ~/.claude(含 settings.json)预填充。
+      - claude-state:/home/${USERNAME:-carla}/.claude
     # 不设 depends_on:开发只需 lead-eval;carla-server 评测时用 start_carla.sh 单独起。
     # 两者在运行时经 adas-net 网络 + 服务名 carla-server:2000 连接,无需启动期强绑定。
     networks:
@@ -67,3 +73,6 @@ services:
 networks:
   adas-net:
     driver: bridge                     # 自定义 bridge:提供服务名 DNS,使 lead-eval 能连 carla-server
+
+volumes:
+  claude-state:                        # Claude Code 配置/历史/凭据持久卷;`down` 保留,仅 `down -v` 清除

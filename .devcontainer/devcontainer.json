@@ -26,21 +26,39 @@
 
   "customizations": {
     "vscode": {
+      // 容器(重新)创建时自动安装的扩展。下面这份列表与当前开发机
+      // (code --list-extensions)保持一致,新增扩展时同步追加即可。
       "extensions": [
+        // Python 工具链
         "ms-python.python",
         "ms-python.vscode-pylance",
         "ms-python.debugpy",
+        "ms-python.vscode-python-envs",
         "charliermarsh.ruff",
+        "njpwerner.autodocstring",
+        // Jupyter
         "ms-toolsai.jupyter",
+        "ms-toolsai.jupyter-keymap",
+        "ms-toolsai.jupyter-renderers",
+        "ms-toolsai.vscode-jupyter-cell-tags",
+        "ms-toolsai.vscode-jupyter-slideshow",
+        "percy.vscode-pydata-viewer",
+        // 容器 / Docker
         "ms-azuretools.vscode-docker",
+        "ms-azuretools.vscode-containers",
+        // 配置文件格式
         "redhat.vscode-yaml",
         "tamasfe.even-better-toml",
+        // CARLA / 仿真
+        "misarb.carlaapi",
+        // 通用
         "eamodio.gitlens",
-        "GitHub.copilot"
+        "naumovs.color-highlight",
+        "anthropic.claude-code"
       ],
       "settings": {
         // 指向容器内 conda 的 lead 环境解释器
-        "python.defaultInterpreterPath": "~/miniforge3/envs/lead/bin/python",
+        "python.defaultInterpreterPath": "/home/carla/miniforge3/envs/lead/bin/python",
         "python.terminal.activateEnvironment": true,
         "terminal.integrated.defaultProfile.linux": "bash",
         "terminal.integrated.profiles.linux": {

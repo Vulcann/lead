@@ -6,10 +6,12 @@ ARG USER_UID=1005
 ARG USER_GID=1006
 ENV DEBIAN_FRONTEND=noninteractive
 
+# 基础依赖(稳定,极少改动)—— 下面 node/conda/torch 都依赖它,放最前以保持缓存。
+# 日常想加的工具不要写在这里,统一加到文件末尾的「日常追加」层,避免触发重型层重建。
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git git-lfs wget curl ca-certificates build-essential \
         ffmpeg parallel tree unzip zip libgl1 libglib2.0-0 \
-        sudo \
+        vim sudo \
     && rm -rf /var/lib/apt/lists/*
 
 # Node.js 20 LTS + Claude Code(系统级 npm 全局安装,放在 root 阶段)
@@ -43,6 +45,11 @@ RUN bash -c "$(curl -fsSL https://raw.githubusercontent.com/ohmybash/oh-my-bash/
 RUN mkdir -p ${HOME_DIR}/.claude
 COPY --chown=${USER_UID}:${USER_GID} claude-settings.json ${HOME_DIR}/.claude/settings.json
 
+# 把 Claude Code 的全局配置(原 ~/.claude.json)也收纳进 ~/.claude,
+# 这样配置 + 历史 + 凭据集中在一个目录,compose 对它挂命名卷即可整体持久化,
+# 不随容器重建而丢失(见 docker-compose.yml 的 claude-state 卷)。
+ENV CLAUDE_CONFIG_DIR=${HOME_DIR}/.claude
+
 # Miniforge(conda) — 用户级环境管理器,放在用户 home(不属于工作区)
 RUN wget -q https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O /tmp/mf.sh \
     && bash /tmp/mf.sh -b -p ${HOME_DIR}/miniforge3 && rm /tmp/mf.sh
@@ -57,6 +64,14 @@ RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkg
     echo 'export VIRTUAL_ENV=$CONDA_PREFIX' > $HOME_DIR/miniforge3/envs/lead/etc/conda/activate.d/uv.sh && \
     echo 'unset VIRTUAL_ENV' > $HOME_DIR/miniforge3/envs/lead/etc/conda/deactivate.d/uv.sh && \
     conda run -n lead pip install torch==2.7.0 torchvision --index-url https://download.pytorch.org/whl/cu128
+
+# 日常追加的系统工具(经常增删)—— 单独放在最后一层,临时切回 root 安装。
+# 在这里加包只重建本层,不会触发上面 node/conda/torch 的重建。
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        htop \
+    && rm -rf /var/lib/apt/lists/*
+USER ${USERNAME}
 
 # LEAD 源码不放进镜像:由宿主机挂载到 /workspace/lead(见 docker-compose.yml)。
 # 这样宿主机改代码即时反映到容器,git 也在宿主机管理。
