@@ -65,7 +65,7 @@ LEAD 横跨顶层,并集成中层全部 4 套基准,运行在底层 CARLA 之上
 | CARLA | **0.9.15** | 与 Bench2Drive / Leaderboard 2.0 生态兼容;LEAD 官方即用此版本(路径写死 `3rd_party/CARLA_0915`) |
 | 不升 0.9.16 | — | 0.9.16 新增 Cosmos/NuRec 数据增强与左手交通,与"先跑通评测"无关;且其 camera transform 修复会改变传感器对齐行为,可能引入 distribution shift |
 | 框架 | **LEAD** (kesai-labs/lead, CVPR 2026) | 官方测试矩阵含 Ubuntu 24.04 + RTX 5090(Inference ✓ / Training ✗),与本机环境完全吻合 |
-| PyTorch | **2.7.0 + CUDA 12.8** | Blackwell 架构(5090)硬性要求 |
+| PyTorch | **2.8.0 + CUDA 12.8** | Blackwell 架构(5090)硬性要求 |
 | Baseline 模型 | **tfv6_resnet34**(60M) | Bench2Drive 94.72 DS;推理负载比 full RegNetY 轻,对 32GB 显存更友好 |
 
 ### LEAD 与 Bench2Drive 的关系
@@ -79,7 +79,7 @@ LEAD 横跨顶层,并集成中层全部 4 套基准,运行在底层 CARLA 之上
 
 本文档与脚本已对照 LEAD `main` 分支 README(第 1.1–1.2 节)逐项核对,确认一致项与修正项:
 
-- ✅ CARLA Python API 路径确为 `3rd_party/CARLA_0915`;`conda create -n lead python=3.10` + `uv sync --active --extra dev`;5090 需 `torch==2.7.0` + `cu128`;`scripts/download_one_checkpoint.sh`;评测命令 `python -m lead --checkpoint ... --bench2drive`;OOM 对策(屏蔽两 seed / `-quality-level=Poor`)。
+- ✅ CARLA Python API 路径确为 `3rd_party/CARLA_0915`;`conda create -n lead python=3.10` + `uv sync --active --extra dev`;5090 需 `torch==2.8.0` + `cu128`;`scripts/download_one_checkpoint.sh`;评测命令 `python -m lead --checkpoint ... --bench2drive`;OOM 对策(屏蔽两 seed / `-quality-level=Poor`)。
 - ✅ 5090 在官方测试矩阵为 Ubuntu 24.04 / CUDA 13.1 / Driver 590,Inference ✓ / Training ✗。
 - 🔧 entrypoint 已补齐 README 要求但此前遗漏的步骤:`conda tos accept`(接受 Anaconda 服务条款,干净镜像未接受会导致 `conda create` 失败)、`deactivate.d/uv.sh`(此前仅建 `activate.d`)、可选 `pre-commit install`。
 - ℹ️ CARLA 下载脚本名为 `scripts/setup_carla.sh`;LEAD 仓库自带 `.vscode/`、`.claude/` 及容器内的 `scripts/start_carla.sh`(与本仓库宿主机脚本同名但作用不同,见 5.5 节)。
@@ -207,7 +207,7 @@ vulkaninfo | head -n 20   # 应看到 Vulkan Instance Version 1.1/1.2/1.3
 
 - 校验 `/workspace/lead` 已挂载 LEAD 源码(缺失则明确报错,不在容器内 clone)。
 - 注册 `LEAD_PROJECT_ROOT`、source `scripts/main.sh`、软链 CARLA 到 `3rd_party/CARLA_0915`。
-- 首次创建 conda `lead` 环境:`conda tos accept` → `conda create` → conda 工具 → 配 uv 的 `activate.d`/`deactivate.d` → `uv sync --active --extra dev` → 装 `torch 2.7.0 + cu128`(5090 必需)→ 可选 `pre-commit install`。
+- 首次创建 conda `lead` 环境:`conda tos accept` → `conda create` → conda 工具 → 配 uv 的 `activate.d`/`deactivate.d` → `uv sync --active --extra dev` → 装 `torch 2.8.0 + cu128`(5090 必需)→ 可选 `pre-commit install`。
 - 轮询 `carla-server:2000` 直到就绪,再交出交互 shell。
 
 > 关于依赖安装位置:为加快二次启动,可把 conda 环境创建与 `uv sync` 移到 Dockerfile 的 `RUN` 阶段固化进镜像;此处放在 entrypoint 是为了让 LEAD 仓库与 CARLA 挂载保持灵活。团队稳定后建议固化进镜像。

@@ -63,7 +63,7 @@ RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkg
     mkdir -p $HOME_DIR/miniforge3/envs/lead/etc/conda/activate.d $HOME_DIR/miniforge3/envs/lead/etc/conda/deactivate.d && \
     echo 'export VIRTUAL_ENV=$CONDA_PREFIX' > $HOME_DIR/miniforge3/envs/lead/etc/conda/activate.d/uv.sh && \
     echo 'unset VIRTUAL_ENV' > $HOME_DIR/miniforge3/envs/lead/etc/conda/deactivate.d/uv.sh && \
-    conda run -n lead pip install torch==2.7.0 torchvision --index-url https://download.pytorch.org/whl/cu128
+    conda run -n lead pip install torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
 
 # 日常追加的系统工具(经常增删)—— 单独放在最后一层,临时切回 root 安装。
 # 在这里加包只重建本层,不会触发上面 node/conda/torch 的重建。

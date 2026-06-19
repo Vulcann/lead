@@ -10,7 +10,7 @@ if ! conda env list | grep -q '^lead '; then
   conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || true
   conda create -n lead python=3.10 -y
   conda run -n lead conda install -c conda-forge ffmpeg parallel tree gcc zip unzip git-lfs uv -y
-  conda run -n lead pip install torch==2.7.0 torchvision --index-url https://download.pytorch.org/whl/cu128
+  conda run -n lead pip install torch==2.8.0 torchvision==0.23.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
 fi
 conda activate lead
 
