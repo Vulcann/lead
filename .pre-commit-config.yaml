@@ -12,9 +12,9 @@ repos:
       - id: mixed-line-ending # replaces or checks mixed line ending.
       - id: trailing-whitespace # trims trailing whitespace.
       - id: check-json
-        exclude: /README\.rst$|\.pot?$|^\.vscode/.*\.json$
+        exclude: /README\.rst$|\.pot?$|^\.(vscode|devcontainer)/.*\.json$
       - id: pretty-format-json
-        exclude: /README\.rst$|\.pot?$|^\.vscode/.*\.json$|\.ipynb$
+        exclude: /README\.rst$|\.pot?$|^\.(vscode|devcontainer)/.*\.json$|\.ipynb$
         args: [--no-sort-keys, --autofix]
 
   - repo: https://github.com/kynan/nbstripout

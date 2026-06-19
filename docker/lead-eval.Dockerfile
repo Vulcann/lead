@@ -48,6 +48,16 @@ RUN wget -q https://github.com/conda-forge/miniforge/releases/latest/download/Mi
     && bash /tmp/mf.sh -b -p ${HOME_DIR}/miniforge3 && rm /tmp/mf.sh
 ENV PATH=${HOME_DIR}/miniforge3/bin:$PATH
 
+# 构建期创建 lead conda 环境 + 装工具 + 装 torch(大头,有缓存,不依赖源码)
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main || true && \
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || true && \
+    conda create -n lead python=3.10 -y && \
+    conda run -n lead conda install -c conda-forge ffmpeg parallel tree gcc zip unzip git-lfs uv -y && \
+    mkdir -p $HOME_DIR/miniforge3/envs/lead/etc/conda/activate.d $HOME_DIR/miniforge3/envs/lead/etc/conda/deactivate.d && \
+    echo 'export VIRTUAL_ENV=$CONDA_PREFIX' > $HOME_DIR/miniforge3/envs/lead/etc/conda/activate.d/uv.sh && \
+    echo 'unset VIRTUAL_ENV' > $HOME_DIR/miniforge3/envs/lead/etc/conda/deactivate.d/uv.sh && \
+    conda run -n lead pip install torch==2.7.0 torchvision --index-url https://download.pytorch.org/whl/cu128
+
 # LEAD 源码不放进镜像:由宿主机挂载到 /workspace/lead(见 docker-compose.yml)。
 # 这样宿主机改代码即时反映到容器,git 也在宿主机管理。
 # 依赖安装(conda env + uv sync + torch)在 entrypoint 首次启动时完成。

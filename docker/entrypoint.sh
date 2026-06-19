@@ -32,34 +32,7 @@ if [ ! -e 3rd_party/CARLA_0915 ]; then
   bash scripts/setup_carla.sh || echo "WARN: setup_carla.sh 失败,可手动 pip install carla==0.9.15"
 fi
 
-if ! conda env list | grep -q "^lead\b"; then
-  # (某些镜像必需)接受 Anaconda 服务条款,否则 conda create 可能失败
-  conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main || true
-  conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r || true
-
-  conda create -n lead python=3.10 -y
-  conda activate lead
-
-  # 系统级工具(README 1.2)
-  conda install -c conda-forge ffmpeg parallel tree gcc zip unzip git-lfs uv -y
-
-  # 让 uv 使用 conda 环境:activate.d 与 deactivate.d 都要配(README 1.2)
-  mkdir -p "$CONDA_PREFIX/etc/conda/activate.d" "$CONDA_PREFIX/etc/conda/deactivate.d"
-  echo 'export VIRTUAL_ENV=$CONDA_PREFIX' > "$CONDA_PREFIX/etc/conda/activate.d/uv.sh"
-  echo 'unset VIRTUAL_ENV'                > "$CONDA_PREFIX/etc/conda/deactivate.d/uv.sh"
-  conda activate lead
-
-  # 安装依赖(运行时 + dev,全部声明在 pyproject.toml)
-  uv sync --active --extra dev
-
-  # Blackwell / RTX 5090 必需:CUDA 12.8 的 PyTorch(README Tip)
-  pip install torch==2.7.0 torchvision --index-url https://download.pytorch.org/whl/cu128
-
-  # 可选:启用 git hooks
-  pre-commit install || true
-else
-  conda activate lead
-fi
+bash /workspace/lead/docker/setup-lead-env.sh
 
 # 探测外部 CARLA server(双容器:连服务名 carla-server)。
 # 非阻塞:开发时 carla-server 可能未启动,不应卡住进 shell。评测前用 start_carla.sh 启动。

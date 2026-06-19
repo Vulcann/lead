@@ -63,8 +63,7 @@
   },
 
   // 容器(重新)创建后执行一次:确认 lead 环境就绪、CARLA Python API 可导入。
-  // 依赖的实际安装由 lead-eval 的 entrypoint.sh 负责,这里只做校验与友好提示。
-  "postCreateCommand": "bash -lc 'source $HOME/miniforge3/etc/profile.d/conda.sh && conda activate lead && python -c \"import torch,carla; print(\\\"torch\\\", torch.__version__, \\\"cuda\\\", torch.cuda.is_available()); print(\\\"carla ok\\\")\" || echo \"环境尚未就绪,首次启动 entrypoint 仍在装依赖,稍候重试\"'",
+  "postCreateCommand": "bash /workspace/lead/docker/setup-lead-env.sh",
 
   // 每次连接(含重启后重连)时打印 GPU 与 CARLA server 连通性,便于快速判断状态
   "postAttachCommand": "bash -lc 'nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv,noheader; python -c \"import carla; print(\\\"carla-server:\\\", carla.Client(\\\"carla-server\\\",2000).get_server_version())\" 2>/dev/null || echo \"carla-server 暂未就绪(可在评测前再确认)\"'",
