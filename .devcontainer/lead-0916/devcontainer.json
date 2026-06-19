@@ -1,0 +1,87 @@
+// LEAD dev container — CARLA 0.9.16 + scenario_runner v0.9.16.
+// Mirrors docker/run.0916.sh so the VS Code workflow matches the manual one.
+// To pick up Dockerfile changes: Command Palette -> "Dev Containers: Rebuild Container".
+// Sibling config: ../lead-0915 (CARLA 0.9.15); VS Code shows a picker on "Reopen in Container".
+// NOTE: both containers share the host workspace mount, so a 3rd_party/CARLA_0915
+// symlink created by the 0915 container also resolves here — to /opt/carla, which in
+// THIS container is CARLA 0.9.16. The `import carla` module itself is always the
+// version-correct pip wheel baked into the image.
+{
+  "name": "lead-0916",
+
+  // Build from the 0.9.16 Dockerfile. Context is the repo root (same as build.0916.sh) so
+  // the Dockerfile's §6.5 can COPY pyproject.toml + uv.lock. The repo-root .dockerignore
+  // allows only those two files, so the big dirs (data/, outputs/, 3rd_party/) are still not sent.
+  "build": {
+    "dockerfile": "../../docker/Dockerfile.lead.0916",
+    "context": "../.."
+  },
+
+  // Equivalent to the `docker run` flags in run.0916.sh.
+  "runArgs": [
+    "--gpus", "all",
+    // CARLA/Unreal renders via Vulkan even with -RenderOffScreen; the default CUDA
+    // image only exposes compute,utility so the NVIDIA Vulkan ICD is missing and the
+    // RenderThread segfaults. 'all' makes nvidia-container-runtime inject the graphics libs.
+    "--env", "NVIDIA_DRIVER_CAPABILITIES=all",
+    "--network=host",
+    "--shm-size=16g",
+    "--ulimit", "memlock=-1",
+    "--ulimit", "stack=67108864",
+    "--ipc=host",
+    // nvidia-container-toolkit (libnvidia-container 1.19.0) 的注入清单漏了
+    // libnvidia-api.so.1 —— 570+/580 驱动分支 GL/Vulkan 栈的依赖。少了它
+    // libGLX_nvidia 无法初始化,vkCreateInstance -> ERROR_INCOMPATIBLE_DRIVER,
+    // CARLA RenderThread 拿不到 Vulkan device 段错误(空日志)。手动从 host 注入。
+    "--volume", "/usr/lib/x86_64-linux-gnu/libnvidia-api.so.1:/usr/lib/x86_64-linux-gnu/libnvidia-api.so.1:ro"
+  ],
+
+  // The image's WORKDIR is /workspace/lead; mount the repo there (replaces run.0916.sh's -v).
+  "workspaceFolder": "/workspace/lead",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspace/lead,type=bind,consistency=cached",
+
+  // Persist the HuggingFace cache across rebuilds, like run.0916.sh.
+  "mounts": [
+    "source=${localEnv:HOME}/.cache/huggingface,target=/root/.cache/huggingface,type=bind,consistency=cached",
+    // Host /data mounted at the same path in the container.
+    "source=/data,target=/data,type=bind,consistency=cached"
+  ],
+
+  // The Dockerfile installs everything as root (/root/.bashrc, /root/.local/bin/claude).
+  "remoteUser": "root",
+
+  // Forwarded from your host shell, like run.0916.sh's -e flags. Empty if unset on the host.
+  "remoteEnv": {
+    "WANDB_API_KEY": "${localEnv:WANDB_API_KEY}",
+    "HF_TOKEN": "${localEnv:HF_TOKEN}"
+  },
+
+  // Recreate the CARLA symlink the .bashrc makes, so it exists for non-login shells,
+  // tasks, and the Python language server.
+  // safe.directory: the repo is bind-mounted from the host (owned by your host user),
+  // but the container runs as root, so git flags "dubious ownership" without this.
+  // '*' also covers the git repos under 3rd_party/. A fresh image resets /root/.gitconfig,
+  // so this must run on every container create.
+  "postCreateCommand": "git config --global --add safe.directory '*' && mkdir -p 3rd_party && ln -sfn /opt/carla 3rd_party/CARLA_0916 && echo '✅ devcontainer (0.9.16) ready'",
+
+  "customizations": {
+    "vscode": {
+      // Mirrors .vscode/extensions.json so the container has the same tooling.
+      "extensions": [
+        "anthropic.claude-code",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "charliermarsh.ruff",
+        "misarb.carlaapi",
+        "naumovs.color-highlight",
+        "percy.vscode-pydata-viewer",
+        "njpwerner.autodocstring",
+        "eamodio.gitlens"
+      ],
+      // Container-specific; the rest of your settings come from .vscode/settings.json.
+      "settings": {
+        "python.defaultInterpreterPath": "/opt/conda/envs/lead/bin/python"
+      }
+    }
+  }
+}

@@ -1,0 +1,174 @@
+# syntax=docker/dockerfile:1.6
+# ─────────────────────────────────────────────────────────────────────
+#  LEAD development image — CARLA 0.9.16
+#  Base: Ubuntu 22.04 (glibc 2.35) + CUDA 12.8 (Blackwell / RTX 5090)
+#  Contains: CARLA 0.9.16 server + Python API, scenario_runner v0.9.16,
+#            Miniconda, PyTorch 2.7
+#  Code mounts:  host ~/workspace/lead  →  container /workspace/lead
+#
+#  Derived from Dockerfile.lead (0.9.15). Diffs: CARLA 0.9.16 tarball +
+#  carla==0.9.16 wheel, upstream scenario_runner v0.9.16 baked at
+#  /opt/scenario_runner, CARLA_0916 symlink name.
+# ─────────────────────────────────────────────────────────────────────
+FROM nvidia/cuda:12.8.0-cudnn-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    TZ=Europe/Berlin
+
+# ───── 1. 系统依赖 ─────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # 基础工具
+    wget curl ca-certificates git git-lfs build-essential \
+    sudo tmux htop tree unzip zip vim nano \
+    # CARLA 运行依赖
+    libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
+    libomp5 libjpeg-turbo8 libtiff5 \
+    libpng16-16 libxerces-c3.2 \
+    fontconfig xdg-user-dirs \
+    # Vulkan (CARLA 渲染后端)
+    libvulkan1 vulkan-tools mesa-vulkan-drivers \
+    # 视频处理
+    ffmpeg \
+    # Python 编译时偶尔需要
+    libssl-dev libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ───── 2. CARLA 0.9.16 ─────
+# ~8.3GB 下载，build 时一次性付出
+RUN mkdir -p /opt/carla && cd /opt/carla && \
+    echo "Downloading CARLA 0.9.16..." && \
+    wget --progress=dot:giga \
+      https://tiny.carla.org/carla-0-9-16-linux -O carla.tar.gz && \
+    tar -xzf carla.tar.gz && \
+    rm carla.tar.gz && \
+    ls -la
+
+ENV CARLA_ROOT=/opt/carla
+ENV PYTHONPATH=/opt/carla/PythonAPI/carla:${PYTHONPATH:-}
+
+# ───── 3. Miniconda ─────
+RUN wget -q \
+    https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh \
+    -O /tmp/mc.sh && \
+    bash /tmp/mc.sh -b -p /opt/conda && \
+    rm /tmp/mc.sh && \
+    /opt/conda/bin/conda clean -afy
+
+ENV PATH=/opt/conda/bin:$PATH
+
+# ───── 4. lead conda env ─────
+# 接受 Anaconda 默认 channel 的 ToS (2024+ 政策)
+RUN conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main && \
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+
+RUN conda create -n lead python=3.10 -y && \
+    conda install -n lead -c conda-forge -y \
+        uv git-lfs ffmpeg parallel tree gcc zip unzip && \
+    conda clean -afy
+
+# 让 lead env 的 python 在 PATH 优先
+ENV PATH=/opt/conda/envs/lead/bin:$PATH
+ENV CONDA_DEFAULT_ENV=lead
+
+# ───── 5. PyTorch 2.7 + CUDA 12.8 (Blackwell / RTX 5090) ─────
+# 注意：根据 LEAD README,Blackwell 仅支持推理,训练不稳定
+RUN /opt/conda/envs/lead/bin/pip install --no-cache-dir \
+    torch==2.7.0 torchvision \
+    --index-url https://download.pytorch.org/whl/cu128
+
+# ───── 6. 把 CARLA Python binding 装到 lead env ─────
+# LEAD 期望直接 import carla 能工作。
+# 注意:打包的 dist/ 只含 cp27/cp37 wheel,与 py3.10 不兼容,
+# 官方 PyPI 提供 cp310 wheel,直接安装它确保 py3.10 下 `import carla` 可用。
+RUN /opt/conda/envs/lead/bin/pip install --no-cache-dir carla==0.9.16
+
+# ───── 6.5 LEAD python deps (baked so a rebuild doesn't wipe the env) ─────
+# pyproject.toml + uv.lock come from the repo root (build context = repo root; see
+# ../.dockerignore which keeps only these two files). Placed AFTER torch/carla so those
+# big layers stay cached; changing the lock only rebuilds from here down.
+#
+# Key flags (mirror the verified runtime restore):
+#  - UV_PROJECT_ENVIRONMENT=/opt/conda/envs/lead : install into the conda env. `uv --active`
+#      keys off VIRTUAL_ENV (not CONDA_PREFIX) and would create a stray .venv instead.
+#  - --no-install-project : the `lead` pkg itself is mounted at runtime, not installed here.
+#  - --inexact : don't remove packages already present (keeps the §5 cu128 torch/triton).
+#  - exclude torch+torchvision+torchaudio+triton AND every nvidia-*-cu12 (12.8 from §5) so the
+#      RTX 5090 / Blackwell GPU stack is untouched; this restores numpy==1.26 / pillow==10.2 /
+#      etc. to the lock versions instead of the loose versions torch pulled.
+COPY pyproject.toml uv.lock /tmp/leaddeps/
+RUN cd /tmp/leaddeps && \
+    EXCLUDE="--no-install-package torch --no-install-package torchvision --no-install-package torchaudio --no-install-package triton" && \
+    for p in $(/opt/conda/envs/lead/bin/pip list --format=freeze | grep -iE '^nvidia-' | cut -d= -f1); do \
+        EXCLUDE="$EXCLUDE --no-install-package $p"; \
+    done && \
+    UV_PROJECT_ENVIRONMENT=/opt/conda/envs/lead \
+        uv sync --inexact --no-install-project --extra dev $EXCLUDE && \
+    rm -rf /tmp/leaddeps
+
+# ───── 6.6 scenario_runner v0.9.16 ─────
+# 上游 carla-simulator/scenario_runner 的 v0.9.16 tag,与 CARLA 0.9.16 server 配套。
+# 当前镜像没有内置 SR;这里 clone 到 /opt/scenario_runner 作为版本对齐的参考实现。
+# 注意:lead env(§6.5 的 uv.lock)已满足 SR 绝大多数依赖(py-trees==0.8.3、
+# networkx==3.4.2、xmlschema==1.0.18 等都已对齐),只补 3 个缺失的轻量包,
+# 不去 pin numpy/shapely/opencv 以免覆盖 LEAD 的 Blackwell 依赖栈。
+RUN git clone --depth 1 --branch v0.9.16 \
+      https://github.com/carla-simulator/scenario_runner.git /opt/scenario_runner && \
+    /opt/conda/envs/lead/bin/pip install --no-cache-dir \
+      simple-watchdog-timer antlr4-python3-runtime==4.10 graphviz
+
+ENV SCENARIO_RUNNER_ROOT=/opt/scenario_runner
+ENV PYTHONPATH=/opt/scenario_runner:${PYTHONPATH:-}
+
+# ───── 7. 工作目录与 symlink ─────
+WORKDIR /workspace/lead
+
+# LEAD 的 setup_carla.sh 期望 3rd_party/CARLA_09xx
+# 容器启动后,host 代码挂载进来,再建 symlink
+# 这里只准备目录结构占位
+RUN mkdir -p /workspace/lead/3rd_party
+
+# ───── 8. 开发工具 (Claude CLI + Oh My Bash) ─────
+# 原生安装器版本
+RUN curl -fsSL https://claude.ai/install.sh | bash \
+ && ln -s /root/.local/bin/claude /usr/local/bin/claude
+
+# Oh My Bash —— 非交互安装 (空 "$0" 占位 + --unattended)。
+# 注意:安装器会覆盖 /root/.bashrc,所以下面 step 9 的 conda/CARLA
+# 初始化必须放在它之后再追加,否则会被清掉。
+RUN bash -c "$(curl -fsSL https://raw.githubusercontent.com/ohmybash/oh-my-bash/master/tools/install.sh)" "" --unattended
+
+# ───── 9. Shell 初始化 (务必在 Oh My Bash 之后) ─────
+RUN echo "source /opt/conda/etc/profile.d/conda.sh" >> /root/.bashrc && \
+    echo "conda activate lead" >> /root/.bashrc && \
+    echo "export PYTHONPATH=/opt/carla/PythonAPI/carla:/opt/scenario_runner:\${PYTHONPATH:-}" >> /root/.bashrc && \
+    echo "export CARLA_ROOT=/opt/carla" >> /root/.bashrc && \
+    echo "export SCENARIO_RUNNER_ROOT=/opt/scenario_runner" >> /root/.bashrc && \
+    echo "cd /workspace/lead" >> /root/.bashrc && \
+    echo "# 自动 symlink CARLA(代码挂载后生效)" >> /root/.bashrc && \
+    echo "[ -d /workspace/lead/3rd_party ] && [ ! -e /workspace/lead/3rd_party/CARLA_0916 ] && ln -sf /opt/carla /workspace/lead/3rd_party/CARLA_0916" >> /root/.bashrc
+
+# ───── 10. CARLA 运行时 (GPU 渲染 + 非 root 用户) ─────
+# 放在最后,改动这里重建时只重跑这几层(CARLA 下载、conda、torch 全部命中缓存)。
+#
+# (a) GPU 渲染能力:即使 -RenderOffScreen,Unreal 的 RenderThread 也要走 Vulkan
+#     访问 NVIDIA GPU。基础 CUDA 镜像默认 NVIDIA_DRIVER_CAPABILITIES=compute,utility,
+#     容器里没有 nvidia Vulkan ICD(/usr/share/vulkan/icd.d/nvidia_icd.json),
+#     于是 RenderThread 60s 超时 → Signal 11 段错误。设为 all 让
+#     nvidia-container-runtime 在容器启动时注入图形 / Vulkan 库。
+ENV NVIDIA_DRIVER_CAPABILITIES=all
+
+# (b) 非 root 运行用户:CarlaUE4-Linux-Shipping 检测到 root 会直接退出
+#     ("Refusing to run with the root privileges.")。建一个非 root 用户专跑 server;
+#     Python client 仍以 root 运行,通过 TCP 2000 连接,两者不需要同一用户。
+#     把 /opt/carla 交给它,Unreal 才能创建 CarlaUE4/Saved/ 并 chmod 自己的二进制。
+RUN useradd -m -s /bin/bash carla && \
+    chown -R carla:carla /opt/carla && \
+    usermod -aG sudo carla
+RUN echo 'carla:carla' | chpasswd
+
+# CARLA 默认端口
+EXPOSE 2000 2001 2002
+
+CMD ["/bin/bash"]

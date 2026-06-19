@@ -69,6 +69,14 @@ fi
 # the loader at the NVIDIA ICD alone leaves the discrete GPU as the only device.
 export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json
 
+# Scrub DISPLAY. With -RenderOffScreen CARLA renders to Vulkan offscreen and
+# needs no X server, but if DISPLAY is set (e.g. :0 from the SSH/login session)
+# UE4 still tries to open it. After the root->carla drop the X auth cookie no
+# longer belongs to 'carla', so the connection is rejected ("Authorization
+# required, but no authorization protocol specified") and UE4 dies during early
+# init with a near-empty log. Unsetting DISPLAY makes it skip X entirely.
+unset DISPLAY
+
 log="/tmp/carla_${port}.log"
 echo "[start_carla] launching CARLA (detached) on port $port; logs -> $log"
 # setsid detaches into a new session so the server survives the launching shell

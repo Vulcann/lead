@@ -1,15 +1,16 @@
-// LEAD dev container.
+// LEAD dev container — CARLA 0.9.15.
 // Mirrors docker/run.sh so the VS Code workflow matches the manual one.
 // To pick up Dockerfile changes: Command Palette -> "Dev Containers: Rebuild Container".
+// Sibling config: ../lead-0916 (CARLA 0.9.16); VS Code shows a picker on "Reopen in Container".
 {
-  "name": "lead",
+  "name": "lead-0915",
 
   // Build from the existing Dockerfile. Context is the repo root (same as build.sh) so the
   // Dockerfile's §6.5 can COPY pyproject.toml + uv.lock. The repo-root .dockerignore allows
   // only those two files, so the big dirs (data/, outputs/, 3rd_party/) are still not sent.
   "build": {
-    "dockerfile": "../docker/Dockerfile.lead",
-    "context": ".."
+    "dockerfile": "../../docker/Dockerfile.lead",
+    "context": "../.."
   },
 
   // Equivalent to the `docker run` flags in run.sh.
