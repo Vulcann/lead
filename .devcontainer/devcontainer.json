@@ -80,6 +80,12 @@
     }
   },
 
+  // 容器创建前在【宿主机】执行:确保 bind-mount 源目录已存在。
+  // 否则 compose 启动时缺失的源目录会被 docker daemon 以 root 自动创建,
+  // 导致容器内用户(carla)无法写入(下载 checkpoint / 评测落盘 Permission denied)。
+  // 由宿主机当前用户(UID 与容器对齐,见 docker/.env)建出,属主即正确,无需 chown。
+  "initializeCommand": "mkdir -p '${localWorkspaceFolder}/outputs' '${localWorkspaceFolder}/checkpoints'",
+
   // 容器(重新)创建后执行一次:确认 lead 环境就绪、CARLA Python API 可导入。
   "postCreateCommand": "bash /workspace/lead/docker/setup-lead-env.sh",
 

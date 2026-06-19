@@ -172,6 +172,7 @@ slurm-*.out
 3rd_party/CARLA_0916
 3rd_party/CARLA_F2D
 outputs/
+/checkpoints/
 docs/build/
 !slurm/
 !slurm/**/*.sh

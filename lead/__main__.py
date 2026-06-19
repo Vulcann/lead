@@ -440,6 +440,8 @@ class LeaderboardWrapper:
             str(self.args.debug),
             "--resume",
             str(int(self.args.resume)),
+            "--host",
+            str(self.args.host),
             "--port",
             str(self.args.port),
             "--traffic-manager-port",
@@ -620,6 +622,13 @@ Examples:
     )
 
     # CARLA settings
+    parser.add_argument(
+        "--host",
+        type=str,
+        default=os.environ.get("CARLA_HOST", "localhost"),
+        help="CARLA server host (default: $CARLA_HOST or localhost). "
+        "Use the compose service name (e.g. carla-server) in the double-container setup.",
+    )
     parser.add_argument("--port", type=int, default=2000, help="CARLA server port")
     parser.add_argument(
         "--traffic-manager-port",

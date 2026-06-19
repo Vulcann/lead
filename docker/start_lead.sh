@@ -24,6 +24,10 @@ if ! docker compose ps --status running --services | grep -qx "${CARLA_SERVICE}"
 fi
 
 echo "==> [2/3] 构建并启动 ${EVAL_SERVICE}"
+# 先在宿主机建好 bind-mount 源目录(仓库根 outputs/、checkpoints/;本脚本在 docker/ 下运行,故用 ../)。
+# 本脚本以宿主机用户运行,属主即与容器 carla 对齐;否则缺失目录会被 docker daemon 以 root 自动创建,
+# 容器内写不了(Permission denied)。
+mkdir -p ../outputs ../checkpoints
 docker compose build "${EVAL_SERVICE}"
 docker compose up -d "${EVAL_SERVICE}"
 # entrypoint.sh 内部会轮询 carla-server:2000,等到就绪才放行。

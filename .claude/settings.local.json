@@ -6,7 +6,12 @@
       "Read(//proc/**)",
       "Bash(command -v docker)",
       "Read(//tmp/**)",
-      "Bash(find / -name 'docker-compose*devcontainer*')"
+      "Bash(find / -name 'docker-compose*devcontainer*')",
+      "Bash(mount)",
+      "Bash(bash -n docker/fix_output_perms.sh)",
+      "Bash(bash -n docker/entrypoint.sh)",
+      "Bash(python -c \"import json; json.load\\(open\\('.devcontainer/devcontainer.json'\\)\\); print\\('devcontainer.json JSON \u5408\u6cd5'\\)\")",
+      "Bash(bash docker/fix_output_perms.sh)"
     ]
   }
 }

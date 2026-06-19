@@ -8,8 +8,15 @@
 
 services:
   # ── 服务端:CARLA 0.9.15 模拟器(纯 server,起一次长驻;崩溃自动拉起)──
+  # 不直接用官方 carlasim/carla:0.9.15:它只含 Town01-10HD,缺 Bench2Drive 需要的
+  # Town11/12/13/15(会报 Map 'Town12' not found)。改为派生镜像,在 carla-server.Dockerfile
+  # 里把 AdditionalMaps 包解进 CARLA 根目录。build context 指向已下好附加地图 tar 包的
+  # 3rd_party/CARLA_0915/Import;start_carla.sh 会在构建前确保 tar 包与 .dockerignore 就位。
   carla-server:
-    image: carlasim/carla:0.9.15
+    build:
+      context: ../3rd_party/CARLA_0915/Import
+      dockerfile: ../../../docker/carla-server.Dockerfile
+    image: chery-adas/carla-server:0.9.15-maps
     runtime: nvidia
     restart: unless-stopped
     environment:
@@ -55,8 +62,8 @@ services:
     volumes:
       # LEAD 源码:宿主机 → 容器,读写挂载。改代码即时生效,git 在宿主机管理。
       - ${LEAD_SRC:-/home/weiyu/workspace/lead}:/workspace/lead
-      - ./outputs:/workspace/lead/outputs                      # 评测产出落盘(数据边界)
-      - ./checkpoints:/workspace/lead/outputs/checkpoints      # 模型权重
+      - ../outputs:/workspace/lead/outputs                     # 评测产出落盘到仓库根 outputs/(数据边界)
+      - ../checkpoints:/workspace/lead/outputs/checkpoints     # 模型权重落到仓库根 checkpoints/
       # 宿主机 git 配置(user.name/email + core.editor=vim 等)只读挂载进容器,
       # 免去每次进容器重设;只读:容器不会把改动回写污染宿主机配置。
       - ${HOST_GITCONFIG:-/home/weiyu/.gitconfig}:/home/${USERNAME:-carla}/.gitconfig:ro

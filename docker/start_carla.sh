@@ -27,10 +27,26 @@ nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu22.04 nvidia-smi -L \
   || { echo "ERROR: 容器内无法访问 GPU,检查 NVIDIA Container Toolkit"; exit 1; }
 
-echo "==> [2/4] 拉取并启动 ${SERVICE}(quality=${QUALITY}, port=${PORT})"
-# carla-server 用现成镜像 carlasim/carla:0.9.15(compose 中只有 image、无 build),
-# 所以是 pull 而非 build;离线且本地已有镜像时 pull 失败可忽略,up 会用本地镜像。
-docker compose pull "${SERVICE}" || true
+echo "==> [2/4] 构建并启动 ${SERVICE}(quality=${QUALITY}, port=${PORT})"
+# carla-server 是派生镜像(carla-server.Dockerfile):在官方 carlasim/carla:0.9.15 上
+# 解入 Bench2Drive 需要的附加地图 Town11/12/13/15(否则缺图报 Map 'Town12' not found)。
+# build context = 3rd_party/CARLA_0915/Import,只需其中的 AdditionalMaps tar 包。
+IMPORT_DIR="../3rd_party/CARLA_0915/Import"
+TARBALL="${IMPORT_DIR}/AdditionalMaps_0.9.15.tar.gz"
+if [[ ! -f "${TARBALL}" ]]; then
+  echo "ERROR: 找不到附加地图包 ${TARBALL}"
+  echo "       请先在仓库根执行: bash scripts/setup_carla.sh(下载 CARLA 与附加地图)"
+  exit 1
+fi
+# 收敛 build context:Import/ 下还有解压后的 ~18G CarlaUE4//Engine/,不写 .dockerignore
+# 会被一起塞进 context。这里幂等生成,确保换机器(3rd_party 由 setup_carla.sh 重建)也成立。
+cat > "${IMPORT_DIR}/.dockerignore" <<'EOF'
+# 自动生成(start_carla.sh):carla-server 镜像只需附加地图 tar 包,
+# 排除已解压的 CarlaUE4//Engine/(~18G),避免 build context 爆炸。
+*
+!AdditionalMaps_0.9.15.tar.gz
+EOF
+docker compose build "${SERVICE}"
 # 通过环境变量把质量/端口传给 compose 的 command 覆盖
 CARLA_QUALITY="${QUALITY}" CARLA_RPC_PORT="${PORT}" \
   docker compose up -d "${SERVICE}"
